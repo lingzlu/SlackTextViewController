@@ -1401,13 +1401,6 @@ CGFloat const SLKAutoCompletionViewDefaultHeight = 140.0;
         [self.scrollViewProxy slk_stopScrolling];
     }
     
-    // Stores the previous keyboard height
-    CGFloat previousKeyboardHeight = self.keyboardHC.constant;
-    
-    // Updates the height constraints' constants
-    self.keyboardHC.constant = [self slk_appropriateKeyboardHeightFromNotification:notification];
-    self.scrollViewHC.constant = [self slk_appropriateScrollViewHeight];
-    
     // Updates and notifies about the keyboard status update
     if ([self slk_updateKeyboardStatus:status]) {
         // Posts custom keyboard notification, if logical conditions apply
@@ -1418,6 +1411,74 @@ CGFloat const SLKAutoCompletionViewDefaultHeight = 140.0;
     if (![self.textView isFirstResponder] || status == SLKKeyboardStatusWillHide) {
         [self slk_hideAutoCompletionViewIfNeeded];
     }
+    
+    if (!(status == SLKKeyboardStatusWillShow && SLK_IS_IPAD && SLK_IS_LANDSCAPE && self.modalPresentationStyle == UIModalPresentationFormSheet)) {
+        [self slk_adjustLayoutOnKeyboardShowOrHide:notification];
+    }
+}
+
+- (void)slk_didShowOrHideKeyboard:(NSNotification *)notification
+{
+    SLKKeyboardStatus status = [self slk_keyboardStatusForNotification:notification];
+    
+    // Skips if the view isn't visible
+    if (!self.isViewVisible) {
+        if (status == SLKKeyboardStatusDidHide && self.keyboardStatus == SLKKeyboardStatusWillHide) {
+            // Even if the view isn't visible anymore, let's still continue to update all states.
+        }
+        else {
+            return;
+        }
+    }
+    
+    // Skips if it is presented inside of a popover
+    if (self.isPresentedInPopover) {
+        return;
+    }
+    
+    // Skips if textview did refresh only
+    if (self.textView.didNotResignFirstResponder) {
+        return;
+    }
+    
+    // Skips if it's the current status
+    if (self.keyboardStatus == status) {
+        return;
+    }
+    
+    // if viewController is presented as formSheet and landscape, iOS internally update formSheet frame on keyboardShown
+    // readjusting constraints so inputbar is at the correct position
+    if (status == SLKKeyboardStatusDidShow && SLK_IS_IPAD && SLK_IS_LANDSCAPE && self.modalPresentationStyle == UIModalPresentationFormSheet) {
+        [self slk_adjustLayoutOnKeyboardShowOrHide:notification];
+    }
+    
+    // Updates and notifies about the keyboard status update
+    if ([self slk_updateKeyboardStatus:status]) {
+        // Posts custom keyboard notification, if logical conditions apply
+        [self slk_postKeyboarStatusNotification:notification];
+    }
+    
+    // After showing keyboard, check if the current cursor position could diplay autocompletion
+    if ([self.textView isFirstResponder] && status == SLKKeyboardStatusDidShow && !self.isAutoCompleting) {
+        
+        // Wait till the end of the current run loop
+        dispatch_async(dispatch_get_main_queue(), ^{
+            [self slk_processTextForAutoCompletion];
+        });
+    }
+    
+    // Very important to invalidate this flag after the keyboard is dismissed or presented, to start with a clean state next time.
+    self.movingKeyboard = NO;
+}
+
+- (void)slk_adjustLayoutOnKeyboardShowOrHide: (NSNotification *)notification
+{
+    // Stores the previous keyboard height
+    CGFloat previousKeyboardHeight = self.keyboardHC.constant;
+    
+    // Updates the height constraints' constants
+    self.keyboardHC.constant = [self slk_appropriateKeyboardHeightFromNotification:notification];
+    self.scrollViewHC.constant = [self slk_appropriateScrollViewHeight];
     
     UIScrollView *scrollView = self.scrollViewProxy;
     
@@ -1468,54 +1529,6 @@ CGFloat const SLKAutoCompletionViewDefaultHeight = 140.0;
     else {
         animations();
     }
-}
-
-- (void)slk_didShowOrHideKeyboard:(NSNotification *)notification
-{
-    SLKKeyboardStatus status = [self slk_keyboardStatusForNotification:notification];
-    
-    // Skips if the view isn't visible
-    if (!self.isViewVisible) {
-        if (status == SLKKeyboardStatusDidHide && self.keyboardStatus == SLKKeyboardStatusWillHide) {
-            // Even if the view isn't visible anymore, let's still continue to update all states.
-        }
-        else {
-            return;
-        }
-    }
-    
-    // Skips if it is presented inside of a popover
-    if (self.isPresentedInPopover) {
-        return;
-    }
-    
-    // Skips if textview did refresh only
-    if (self.textView.didNotResignFirstResponder) {
-        return;
-    }
-    
-    // Skips if it's the current status
-    if (self.keyboardStatus == status) {
-        return;
-    }
-    
-    // Updates and notifies about the keyboard status update
-    if ([self slk_updateKeyboardStatus:status]) {
-        // Posts custom keyboard notification, if logical conditions apply
-        [self slk_postKeyboarStatusNotification:notification];
-    }
-    
-    // After showing keyboard, check if the current cursor position could diplay autocompletion
-    if ([self.textView isFirstResponder] && status == SLKKeyboardStatusDidShow && !self.isAutoCompleting) {
-        
-        // Wait till the end of the current run loop
-        dispatch_async(dispatch_get_main_queue(), ^{
-            [self slk_processTextForAutoCompletion];
-        });
-    }
-    
-    // Very important to invalidate this flag after the keyboard is dismissed or presented, to start with a clean state next time.
-    self.movingKeyboard = NO;
 }
 
 - (void)slk_didPostSLKKeyboardNotification:(NSNotification *)notification
